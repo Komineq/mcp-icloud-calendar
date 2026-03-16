@@ -413,14 +413,17 @@ func (c *Client) GetEventPath(calendarPath, eventID string) string {
 	return fmt.Sprintf("%s/%s", calPath, eventID)
 }
 
-// hasVEVENT reports whether a CalDAV object contains a VEVENT component.
+// hasVEVENT reports whether a CalDAV object contains a VEVENT component with actual data.
+// iCloud sometimes returns empty VEVENT shells (no UID, no DTSTART) — treat those as missing.
 func hasVEVENT(obj *caldav.CalendarObject) bool {
 	if obj.Data == nil {
 		return false
 	}
 	for _, child := range obj.Data.Children {
 		if child.Name == ical.CompEvent {
-			return true
+			if child.Props.Get(ical.PropUID) != nil || child.Props.Get(ical.PropDateTimeStart) != nil {
+				return true
+			}
 		}
 	}
 	return false
