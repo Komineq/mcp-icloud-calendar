@@ -236,10 +236,10 @@ func (c *Client) SearchEvents(ctx context.Context, calendarPath string, startTim
 
 	events := make([]Event, 0, len(calendarObjects))
 	for _, obj := range calendarObjects {
-		// iCloud CalDAV returns only hrefs (empty Data) in calendar-query responses.
-		// Fetch the full object individually when that happens.
+		// iCloud CalDAV returns only hrefs (without VEVENT data) in calendar-query
+		// responses with time range filters. Detect this and fetch each object individually.
 		fullObj := obj
-		if obj.Data == nil || len(obj.Data.Children) == 0 {
+		if !hasVEVENT(&obj) {
 			fetched, err := c.backend.GetCalendarObject(ctx, obj.Path)
 			if err != nil {
 				slog.Warn("skipping event: failed to fetch calendar object", "path", obj.Path, "error", err)
@@ -411,6 +411,19 @@ func (c *Client) GetEventPath(calendarPath, eventID string) string {
 		eventID += ".ics"
 	}
 	return fmt.Sprintf("%s/%s", calPath, eventID)
+}
+
+// hasVEVENT reports whether a CalDAV object contains a VEVENT component.
+func hasVEVENT(obj *caldav.CalendarObject) bool {
+	if obj.Data == nil {
+		return false
+	}
+	for _, child := range obj.Data.Children {
+		if child.Name == ical.CompEvent {
+			return true
+		}
+	}
+	return false
 }
 
 // parseCalendarObject converts a CalDAV calendar object to our Event struct
