@@ -236,7 +236,19 @@ func (c *Client) SearchEvents(ctx context.Context, calendarPath string, startTim
 
 	events := make([]Event, 0, len(calendarObjects))
 	for _, obj := range calendarObjects {
-		event, err := c.parseCalendarObject(&obj)
+		// iCloud CalDAV returns only hrefs (empty Data) in calendar-query responses.
+		// Fetch the full object individually when that happens.
+		fullObj := obj
+		if obj.Data == nil || len(obj.Data.Children) == 0 {
+			fetched, err := c.backend.GetCalendarObject(ctx, obj.Path)
+			if err != nil {
+				slog.Warn("skipping event: failed to fetch calendar object", "path", obj.Path, "error", err)
+				continue
+			}
+			fullObj = *fetched
+		}
+
+		event, err := c.parseCalendarObject(&fullObj)
 		if err != nil {
 			slog.Warn("skipping unparseable calendar object", "path", obj.Path, "error", err)
 			continue
