@@ -429,6 +429,35 @@ func hasVEVENT(obj *caldav.CalendarObject) bool {
 	return false
 }
 
+// parseICalTime tries multiple strategies to extract a time.Time from an iCal property.
+// Handles DATETIME with Z, DATETIME with TZID, and bare DATE formats.
+func parseICalTime(prop *ical.Prop) time.Time {
+	// 1. Try go-ical's DateTime (handles Z-suffix and floating times)
+	if t, err := prop.DateTime(time.UTC); err == nil {
+		return t
+	}
+
+	// Resolve location from TZID if present
+	loc := time.UTC
+	if tzid := prop.Params.Get(ical.PropTimezoneID); tzid != "" {
+		if l, err := time.LoadLocation(tzid); err == nil {
+			loc = l
+		}
+	}
+
+	// 2. Try local DATETIME without Z (e.g. 20260316T090000)
+	if t, err := time.ParseInLocation("20060102T150405", prop.Value, loc); err == nil {
+		return t
+	}
+
+	// 3. Try bare DATE (e.g. 20260316)
+	if t, err := time.ParseInLocation("20060102", prop.Value, loc); err == nil {
+		return t
+	}
+
+	return time.Time{}
+}
+
 // parseCalendarObject converts a CalDAV calendar object to our Event struct
 func (c *Client) parseCalendarObject(obj *caldav.CalendarObject) (*Event, error) {
 	// Find the VEVENT component
@@ -471,13 +500,7 @@ func (c *Client) parseCalendarObject(obj *caldav.CalendarObject) (*Event, error)
 
 	// Extract start time
 	if dtstart := vevent.Props.Get(ical.PropDateTimeStart); dtstart != nil {
-		startTime, err := dtstart.DateTime(time.UTC)
-		if err == nil {
-			event.StartTime = startTime
-		} else if t, dateErr := time.Parse("20060102", dtstart.Value); dateErr == nil {
-			// Fallback for VALUE=DATE format (e.g. 20260316)
-			event.StartTime = t
-		}
+		event.StartTime = parseICalTime(dtstart)
 		if tzid := dtstart.Params.Get(ical.PropTimezoneID); tzid != "" {
 			event.Timezone = tzid
 		}
@@ -485,12 +508,7 @@ func (c *Client) parseCalendarObject(obj *caldav.CalendarObject) (*Event, error)
 
 	// Extract end time
 	if dtend := vevent.Props.Get(ical.PropDateTimeEnd); dtend != nil {
-		endTime, err := dtend.DateTime(time.UTC)
-		if err == nil {
-			event.EndTime = endTime
-		} else if t, dateErr := time.Parse("20060102", dtend.Value); dateErr == nil {
-			event.EndTime = t
-		}
+		event.EndTime = parseICalTime(dtend)
 	}
 
 	// Extract recurrence rule
