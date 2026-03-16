@@ -474,9 +474,12 @@ func (c *Client) parseCalendarObject(obj *caldav.CalendarObject) (*Event, error)
 		startTime, err := dtstart.DateTime(time.UTC)
 		if err == nil {
 			event.StartTime = startTime
-			if tzid := dtstart.Params.Get(ical.PropTimezoneID); tzid != "" {
-				event.Timezone = tzid
-			}
+		} else if t, dateErr := time.Parse("20060102", dtstart.Value); dateErr == nil {
+			// Fallback for VALUE=DATE format (e.g. 20260316)
+			event.StartTime = t
+		}
+		if tzid := dtstart.Params.Get(ical.PropTimezoneID); tzid != "" {
+			event.Timezone = tzid
 		}
 	}
 
@@ -485,6 +488,8 @@ func (c *Client) parseCalendarObject(obj *caldav.CalendarObject) (*Event, error)
 		endTime, err := dtend.DateTime(time.UTC)
 		if err == nil {
 			event.EndTime = endTime
+		} else if t, dateErr := time.Parse("20060102", dtend.Value); dateErr == nil {
+			event.EndTime = t
 		}
 	}
 
